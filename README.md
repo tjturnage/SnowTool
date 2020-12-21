@@ -9,6 +9,6 @@ Requires the following local directories be created and accessible for handling 
 
 * raw/          : downloaded file location\n
 * processed/    : after text in downloaded files is reformatted the results are written into files in this directory
-  *               file format is **YYYYMMDD_HH_{model}_{station).txt** and refers to model run times
+                  file format is **YYYYMMDD_HH_{model}_{station).txt** and refers to model run times
 * stage/        : staging location for selected processed files that will be read into dataframes for plotting
 
