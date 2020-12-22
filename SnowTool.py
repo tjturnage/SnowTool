@@ -44,6 +44,7 @@ class SnowTool:
         # the issuing office, not the TAF site
         self.station = station
         self.model_list = model_list
+        self.text_file = None
         self.df = None
         self.df_master = None
         self.fig, self.ax = plt.subplots(1,1,sharex='row',figsize=(10,4))
@@ -57,19 +58,23 @@ class SnowTool:
         self.raw_dir = os.path.join(self.base_dir,'raw')
         self.processed_dir = os.path.join(self.base_dir,'processed')  
         self.staged_dir = os.path.join(self.base_dir,'staged')
-        self.trimmed_file_list= []
         self.colnames = []
-        self.totnames = []
+        self.totsn_names = []
+        self.sn_names = []
+        self.legends = []
+        self.staged_file_dict = {}
+
         self.df_master = None
         for sf in os.listdir(self.raw_dir):
             os.remove(os.path.join(self.raw_dir,sf))
         for st in os.listdir(self.staged_dir):
             os.remove(os.path.join(self.staged_dir,st))
         self.colsp = 0.4
-        self.model_info = {'gfs3':{'cmap':plt.cm.Blues, 'cspace': self.colsp, 'width': 1},
-                      'nam':{'cmap':plt.cm.Greens, 'cspace': self.colsp, 'width': 1},
-                      'hrrr':{'cmap':plt.cm.Greens, 'cspace': self.colsp, 'width': 1},    
-                      'rap':{'cmap':plt.cm.Blues, 'cspace': self.colsp, 'width': 1}}
+        self.model_info = {'gfs3':{'name':'gfs3','cmap':plt.cm.Greys, 'cspace': self.colsp, 'width': 1},
+                      'nam':{'name':'nam','cmap':plt.cm.Blues, 'cspace': self.colsp, 'width': 1},
+                      'namnest':{'name':'nam','cmap':plt.cm.Oranges, 'cspace': self.colsp, 'width': 1},
+                      'hrrr':{'name':'hrrr','cmap':plt.cm.Greens, 'cspace': self.colsp, 'width': 1},    
+                      'rap':{'name':'rap','cmap':plt.cm.Purples, 'cspace': self.colsp, 'width': 1}}
         self.main()
 
 
@@ -234,15 +239,15 @@ class SnowTool:
                 for line in src:
 
                     if self.model in ('nam','namnest','rap','hrrr','gfs3'):
-                        if 'FH' in line and 'FHR' not in line:
 
-                                
+                        if 'FH' in line and 'FHR' not in line:                                
                             t = line[2:]
                             t2 = t.replace('|', ' ')
                             t3 = t2.replace('          ', ' nowx ')
                             t4 = t3.replace(',', ' ')
                             t5 = t4.split()
                             self.temp = self.temp + ', '.join(t5) + '\n'
+
                     else:
                         print('model not recognized!')
 
@@ -251,6 +256,21 @@ class SnowTool:
                 for line in self.temp.splitlines():
                     dst.write(line + '\n')
          
+        return
+
+    def add_to_staged_file_dict(self):
+        find_dts = re.compile('\d{8}_\d{2}')        
+        dts_match = find_dts.search(self.text_file)
+        dts = dts_match[0]
+        issued = datetime.strptime(dts, '%Y%m%d_%H')
+        coltime = datetime.strftime(issued, '_%d%H')
+        filename_segments = self.text_file.split('_')
+        mod_name = filename_segments[2]
+        colname = mod_name + coltime
+        self.staged_file_dict[self.text_file] = {'model': mod_name,
+                                                 'issued': issued,
+                                                 'colname': colname                                          
+                                                 }
         return
 
 
@@ -264,6 +284,8 @@ class SnowTool:
         self.already = sorted(os.listdir(self.processed_dir),reverse = True)
         for f in self.already:
             if self.station in f and self.model in f and self.model_count < 4:
+                self.text_file = f
+                self.add_to_staged_file_dict()
                 src = os.path.join(self.processed_dir,f)
                 dst = os.path.join(self.staged_dir,f)
                 shutil.copy(src, dst)
@@ -287,26 +309,22 @@ class SnowTool:
             fname = os.path.join(self.staged_dir,f)
             fhrs = None
             self.df = None
-            find_dts = re.compile('\d{8}_\d{2}')
-            #find_mod_name = re.compile('(?<=_)\S+(?=\.)')
-            dts_m = find_dts.search(str(fname))
-            dts = dts_m[0]
+
             cols = ['FH', 'Day' ,'Mon', 'date' ,'hour', 'Wind','SfcT','Ptype','Snow','TotSN','ObsSN','Sleet',
                 'TotPL','FZRA','TotZR','QPF','TotQPF','SRat','CumSR','ObsSR','PcntSN','PcntPL','PcntRA','pcpPot','pthick']
 
-            issued = datetime.strptime(dts, '%Y%m%d_%H')
-            colname = datetime.strftime(issued, '%m%d%H')
-            colname = colname + str(fname)[-7:-4]
             self.df = pd.read_csv(fname, names=cols)
-            
+
+            # remove 'KT' from Wind column strings, extract wspd string, convert to ints            
             self.df['Wind'] = [int(str(wspd)[-4:-2]) for wspd in self.df['Wind']]
+            # remove 'F' from Tsfc column strings, convert to floats     
             self.df['SfcT'] = [float(str(Temp)[:-1]) for Temp in self.df['SfcT']]
     
             fhrs = list(self.df.FH.values)
             dts = []
             for fh in range(0,len(fhrs)):
                 hrs = int(fhrs[fh])
-                dt = issued + timedelta(hours=hrs)
+                dt = self.staged_file_dict[f]['issued'] + timedelta(hours=hrs)
                 dts.append(dt)
 
             self.df['Datetime'] = dts
@@ -321,32 +339,37 @@ class SnowTool:
             if self.df_master is None:
                 self.df_master = self.df
             
-            sn = self.df['Snow'].astype(float)            
-            self.df_master[str(colname)] = sn
-            self.colnames.append(colname)
+            sn = self.df['Snow'].astype(float)
+            sn_name = 'sn_' + self.staged_file_dict[f]['colname']
+            self.df_master[str(sn_name)] = sn
+            if sn_name not in self.sn_names:
+                self.sn_names.append(sn_name)            
 
             totsn = self.df['TotSN'].astype(float)
-            totname = 'tot' + self.model + colname
-            self.df_master[str(totname)] = totsn
-            if totname not in self.totnames:
-                self.totnames.append(totname)
+            totsn_name = 'totsn_' + self.staged_file_dict[f]['colname']
+            self.df_master[str(totsn_name)] = totsn
+            if totsn_name not in self.totsn_names:
+                self.totsn_names.append(totsn_name)
 
         return
 
     def plot_model(self):
-        if 'rap' in self.n:
-            model = 'rap'
-        elif 'hrrr' in self.n:
-            model = 'hrrr'
+
+        els = self.n.split('_')
+        model = els[1]
+        runtime = els[-1]
+        if len(model) > 5:
+            mod_leg = 'nest'
         else:
-            model = self.model
-        legend = self.n[3:-3] + '00Z'
+            mod_leg = model
+        legend_str = '{}_{}'.format(mod_leg,runtime)
+        self.legends.append(legend_str)
         cmap = self.model_info[model]['cmap']
         c = self.model_info[model]['cspace']
         rcParams['axes.prop_cycle'] = cycler(color=cmap(np.linspace(0, 1, 4)))
         plt.plot(self.df_master[self.n], color=cmap(c), linewidth=3)
         self.custom_line = Line2D(self.df_master[self.n], [0], color=cmap(c), lw=c*5)
-        self.legend_title_list.append(legend)
+
         self.custom_line_list.append(self.custom_line)
         self.model_info[model]['cspace'] = self.model_info[model]['cspace'] + (1 - self.colsp)/4
         return
@@ -355,35 +378,40 @@ class SnowTool:
     def final_plot(self):
         
         self.custom_line_list = []
-        self.legend_title_list = []
-
-                
-        #hours = mdates.HourLocator()
-        #myFmt = DateFormatter("%d%h")
-        #self.N = len(self.totnames)
+        
+        # try:
+        #     f1 = self.df_master[self.totsn_names[-1]] * 4
+        #     f2 = self.df_master[self.totsn_names[-2]] * 2
+        #     f3 = self.df_master[self.totsn_names[-3]] * 1
+        #     f4 = self.df_master[self.totsn_names[-4]] * 0.5
+        #     self.df_master['weighted'] = f1 + f2 + f3 + f4
+        #     self.df_master['weighted'] = self.df_master['weighted']/7.5
+        # except:
+        #     self.df_master['weighted'] = f1/4
+            
 
         try:
-            f1 = self.df_master[self.totnames[-1]] * 4
-            f2 = self.df_master[self.totnames[-2]] * 2
-            f3 = self.df_master[self.totnames[-3]] * 1
-            f4 = self.df_master[self.totnames[-4]] * 0.5
-            self.df_master['weighted'] = f1 + f2 + f3 + f4
-            self.df_master['weighted'] = self.df_master['weighted']/7.5
+            self.df_master['weighted'] = self.df_master[self.totsn_names[0]]
+            for t in range(1,len(self.totsn_names)):
+                self.df_master['weighted'] = self.df_master['weighted'] + self.df_master[self.totsn_names[1]]
+
+            self.df_master['weighted'] = self.df_master['weighted']/len(self.totsn_names)
         except:
-            self.df_master['weighted'] = f1/4            
+            print('weighted calculation failed!')
+            self.df_master['weighted'] = self.df_master[self.totsn_names[0]]     
 
 
 
-        for self.n in self.totnames:
+        for self.n in self.totsn_names:
             self.plot_model()
 
         self.weighted_line = Line2D(self.df_master['weighted'], [0], color='r', lw=2)
         self.custom_line_list.append(self.weighted_line)
-        self.legend_title_list.append('Weighted Avg\n(last 4 runs)')
+        self.legends.append('Avg')
         plt.plot(self.df_master['weighted'], color='r',linewidth=2, linestyle='-',)
         #plt.ylim(0, 2*np.max(self.df_master['weighted']) )
         plt.grid(axis='y')
-        self.ax.legend(self.custom_line_list, self.legend_title_list)
+        self.ax.legend(self.custom_line_list, self.legends, fontsize=8)
         # place a text box in upper left in axes coords
         props = dict(boxstyle='round', facecolor='white', alpha=0.7)
 
@@ -396,13 +424,10 @@ class SnowTool:
             self.ax.set_xlim(pd.Timestamp(self.gfs_start), pd.Timestamp(self.gfs_end))
         #self.ax.xaxis.set_major_locator(hours)
         #self.ax.xaxis.set_major_formatter(myFmt)
-        img_fname = '{}_{}.png'.format(self.model,self.station)
+        img_fname = '{}.png'.format(self.model)
         image_dst_path = os.path.join(image_dir,img_fname)
         plt.savefig(image_dst_path,format='png')
         plt.close()
-
-
-                          
 
         return
 
@@ -412,5 +437,6 @@ class SnowTool:
 #mqt = SnowTool('kmqt','gfs3')
 #tlh = SnowTool('ktlh','hrrr')
 #biv = SnowTool('biv','gfs3')
-grr = SnowTool('kgrr',['hrrr','rap'])#['gfs3','nam'])
+#grr = SnowTool('kgrr',['hrrr','rap'])#['gfs3','nam'])
+msp = SnowTool('kmsp',['rap','hrrr'])#['gfs3','nam'])
 #mbl = SnowTool('kmbl','nam')
