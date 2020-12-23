@@ -13,6 +13,7 @@ import urllib
 from matplotlib import rcParams, cycler
 import numpy as np
 from matplotlib.lines import Line2D
+import itertools, operator
 
 from pandas.plotting import register_matplotlib_converters
 register_matplotlib_converters()
@@ -40,14 +41,14 @@ except:
 
 class SnowTool:
 
-    def __init__(self, station, model_list, download=True, plot=True):
+    def __init__(self, station, model_list):
         # the issuing office, not the TAF site
         self.station = station
         self.model_list = model_list
         self.text_file = None
         self.df = None
         self.df_master = None
-        self.fig, self.ax = plt.subplots(1,1,sharex='row',figsize=(10,4))
+
         
         self.made_master = False
         self.plotted = False
@@ -58,9 +59,8 @@ class SnowTool:
         self.raw_dir = os.path.join(self.base_dir,'raw')
         self.processed_dir = os.path.join(self.base_dir,'processed')  
         self.staged_dir = os.path.join(self.base_dir,'staged')
-        self.colnames = []
-        self.totsn_names = []
-        self.sn_names = []
+
+        self.column_names = []
         self.legends = []
         self.staged_file_dict = {}
 
@@ -108,12 +108,14 @@ class SnowTool:
         goback = self.now - timedelta(hours=2)
         goback6 = self.now - timedelta(hours=round_down_6hrs)
         self.roundup6 = self.now + timedelta(hours=round_up_6hrs)
-        self.gfs_start = self.roundup6 + timedelta(days=1)
+        self.gfs_start = self.roundup6 + timedelta(days=0)
         self.gfs_end = self.roundup6 + timedelta(hours=84)
+        self.short_end = self.now + timedelta(hours=48)
         #clean = goback.replace(minute=0, second=0, microsecond=0)
         # hourly run time interval for these models, could go > 4 versions back
 
-        if self.model == 'hrrr' or self.model == 'rap':
+        #if self.model == 'hrrr' or self.model == 'rap':
+        if self.model == 'blorg' or self.model == 'blah':
             
             for h in range (0,6):
                 new = goback - timedelta(hours=h)
@@ -123,9 +125,10 @@ class SnowTool:
                 self.psbl_files.append(psbl_file)
             self.hrs.append(hr)
             
-        elif self.model == 'nam' or self.model == 'namnest' or self.model == 'gfs3':
+        #elif self.model == 'nam' or self.model == 'namnest' or self.model == 'gfs3':
+        elif self.model in ['nam', 'namnest', 'rap', 'hrrr', 'gfs3']:
             # 6 hourly run time interval for these models
-            for i in range (0,4):
+            for i in range (0,3):
                 new = goback6 - timedelta(hours=i*6)
                 hr = datetime.strftime(new, '%H')
                 tf = datetime.strftime(new, '%Y%m%d_%H')
@@ -134,7 +137,7 @@ class SnowTool:
         else:
             print('model not found!')
 
-        print(self.psbl_files)
+        #print(self.psbl_files)
         return
     
 
@@ -262,14 +265,14 @@ class SnowTool:
         find_dts = re.compile('\d{8}_\d{2}')        
         dts_match = find_dts.search(self.text_file)
         dts = dts_match[0]
-        issued = datetime.strptime(dts, '%Y%m%d_%H')
-        coltime = datetime.strftime(issued, '_%d%H')
+        model_run_time = datetime.strptime(dts, '%Y%m%d_%H')
+        df_column_name_time_substring = datetime.strftime(model_run_time, '_%d%H')
         filename_segments = self.text_file.split('_')
-        mod_name = filename_segments[2]
-        colname = mod_name + coltime
-        self.staged_file_dict[self.text_file] = {'model': mod_name,
-                                                 'issued': issued,
-                                                 'colname': colname                                          
+        model_name = filename_segments[2]
+        column_substring = model_name + df_column_name_time_substring
+        self.staged_file_dict[self.text_file] = {'model': model_name,
+                                                 'issued': model_run_time,
+                                                 'colname': column_substring                                          
                                                  }
         return
 
@@ -280,16 +283,18 @@ class SnowTool:
         copy the pertinent files from the processed directory into the staging directory.
 
         """
+        
         self.model_count = 0
         self.already = sorted(os.listdir(self.processed_dir),reverse = True)
         for f in self.already:
-            if self.station in f and self.model in f and self.model_count < 4:
-                self.text_file = f
-                self.add_to_staged_file_dict()
-                src = os.path.join(self.processed_dir,f)
-                dst = os.path.join(self.staged_dir,f)
-                shutil.copy(src, dst)
-                self.model_count = self.model_count + 1
+            if self.station in f and self.model in f and self.model_count < 2:
+                if int(f.split('_')[1])%6 == 0 :
+                    self.text_file = f
+                    self.add_to_staged_file_dict()
+                    src = os.path.join(self.processed_dir,f)
+                    dst = os.path.join(self.staged_dir,f)
+                    shutil.copy(src, dst)
+                    self.model_count = self.model_count + 1
             else:
                 pass
 
@@ -306,6 +311,7 @@ class SnowTool:
         """
 
         for f in os.listdir(self.staged_dir):
+            column_name_substr = self.staged_file_dict[f]['colname']
             fname = os.path.join(self.staged_dir,f)
             fhrs = None
             self.df = None
@@ -329,27 +335,28 @@ class SnowTool:
 
             self.df['Datetime'] = dts
 
-            try:
-                self.df.drop(labels=['FH','Day','Mon','Date','Hour','pthick'],axis=1, inplace=True)
-            except:
-                pass
-
             self.df = self.df.set_index(pd.DatetimeIndex(self.df['Datetime']))
             self.df = self.df.rename_axis(None)
+
+            # initialize master dataframe if not done yet
             if self.df_master is None:
                 self.df_master = self.df
-            
-            sn = self.df['Snow'].astype(float)
-            sn_name = 'sn_' + self.staged_file_dict[f]['colname']
-            self.df_master[str(sn_name)] = sn
-            if sn_name not in self.sn_names:
-                self.sn_names.append(sn_name)            
 
-            totsn = self.df['TotSN'].astype(float)
-            totsn_name = 'totsn_' + self.staged_file_dict[f]['colname']
-            self.df_master[str(totsn_name)] = totsn
-            if totsn_name not in self.totsn_names:
-                self.totsn_names.append(totsn_name)
+            for c,p in zip(['Snow','FZRA','Sleet','SfcT','Wind'], ['snow_', 'fzra_', 'sleet_', 'temp_', 'wind_']):
+            
+                x = self.df[c].astype(float)
+                this_column_name = p + column_name_substr
+                self.df_master[str(this_column_name)] = x
+                if this_column_name not in self.column_names:
+                    self.column_names.append(this_column_name)            
+
+            
+            # these are "original" columns consisting of accumulations            
+            for c,a in zip(['Snow','FZRA','Sleet'], ['acsn_', 'aczr_', 'acpl_']):
+                this_column_name = a + column_name_substr
+                self.df_master[str(this_column_name)] = self.df[c].cumsum()
+                if this_column_name not in self.column_names:
+                    self.column_names.append(this_column_name)                  
 
         return
 
@@ -367,6 +374,7 @@ class SnowTool:
         cmap = self.model_info[model]['cmap']
         c = self.model_info[model]['cspace']
         rcParams['axes.prop_cycle'] = cycler(color=cmap(np.linspace(0, 1, 4)))
+        print(self.n, self.df_master[self.n])
         plt.plot(self.df_master[self.n], color=cmap(c), linewidth=3)
         self.custom_line = Line2D(self.df_master[self.n], [0], color=cmap(c), lw=c*5)
 
@@ -375,56 +383,43 @@ class SnowTool:
         return
 
 
+    def remove_plot_junk(self):
+        self.ax.spines['top'].set_visible(False)
+        self.ax.spines['bottom'].set_visible(False)
+        self.ax.spines['left'].set_visible(False)      
+        self.ax.spines['right'].set_visible(False)
+        #self.ax.get_xaxis.tick_bottom()
+        #self.ax.get_yaxis.tick_left()
+        #self.plt.yticks(fontsize=10)
+        self.ax.grid(linestyle='--', alpha=0.5)
+        plt.tick_params(axis='both', which='both', bottom=False, top=False, 
+                        labelbottom=True, left=False, right=False, labelleft=True)
+        
+        return
+
+
     def final_plot(self):
-        
+        numrows = 2
+        self.fig, self.axes = plt.subplots(nrows=numrows,sharex=True,figsize=(10,4))        
         self.custom_line_list = []
-        
-        # try:
-        #     f1 = self.df_master[self.totsn_names[-1]] * 4
-        #     f2 = self.df_master[self.totsn_names[-2]] * 2
-        #     f3 = self.df_master[self.totsn_names[-3]] * 1
-        #     f4 = self.df_master[self.totsn_names[-4]] * 0.5
-        #     self.df_master['weighted'] = f1 + f2 + f3 + f4
-        #     self.df_master['weighted'] = self.df_master['weighted']/7.5
-        # except:
-        #     self.df_master['weighted'] = f1/4
-            
+        for self.n in self.column_names:
+            if 'temp' in self.n:
+                self.plot_model()
 
-        try:
-            self.df_master['weighted'] = self.df_master[self.totsn_names[0]]
-            for t in range(1,len(self.totsn_names)):
-                self.df_master['weighted'] = self.df_master['weighted'] + self.df_master[self.totsn_names[1]]
-
-            self.df_master['weighted'] = self.df_master['weighted']/len(self.totsn_names)
-        except:
-            print('weighted calculation failed!')
-            self.df_master['weighted'] = self.df_master[self.totsn_names[0]]     
-
-
-
-        for self.n in self.totsn_names:
-            self.plot_model()
-
-        self.weighted_line = Line2D(self.df_master['weighted'], [0], color='r', lw=2)
-        self.custom_line_list.append(self.weighted_line)
-        self.legends.append('Avg')
-        plt.plot(self.df_master['weighted'], color='r',linewidth=2, linestyle='-',)
-        #plt.ylim(0, 2*np.max(self.df_master['weighted']) )
-        plt.grid(axis='y')
         self.ax.legend(self.custom_line_list, self.legends, fontsize=8)
-        # place a text box in upper left in axes coords
+
         props = dict(boxstyle='round', facecolor='white', alpha=0.7)
 
         title_str = 'Snow Accum\nstation: {}'.format(self.station)
         self.ax.text(0.23, 0.95, title_str, transform=self.ax.transAxes, fontsize=14,
                      verticalalignment='top', bbox=props)
 
+        self.remove_plot_junk()
 
-        if 'gfs3' in self.model_list:
-            self.ax.set_xlim(pd.Timestamp(self.gfs_start), pd.Timestamp(self.gfs_end))
+        self.ax.set_xlim(pd.Timestamp(self.now), pd.Timestamp(self.short_end))            
         #self.ax.xaxis.set_major_locator(hours)
         #self.ax.xaxis.set_major_formatter(myFmt)
-        img_fname = '{}.png'.format(self.model)
+        img_fname = '{}.png'.format(self.station)
         image_dst_path = os.path.join(image_dir,img_fname)
         plt.savefig(image_dst_path,format='png')
         plt.close()
@@ -438,5 +433,5 @@ class SnowTool:
 #tlh = SnowTool('ktlh','hrrr')
 #biv = SnowTool('biv','gfs3')
 #grr = SnowTool('kgrr',['hrrr','rap'])#['gfs3','nam'])
-msp = SnowTool('kmsp',['rap','hrrr'])#['gfs3','nam'])
+olu = SnowTool('kolu',['gfs','nam','namnest','rap','hrrr'])
 #mbl = SnowTool('kmbl','nam')
