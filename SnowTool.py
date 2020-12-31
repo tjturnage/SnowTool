@@ -4,7 +4,7 @@ Extracting AFDs and sorting by time
 
 
 import re
-import urllib
+import urllib.request
 
 import matplotlib.dates as mdates
 from matplotlib.dates import DateFormatter
@@ -32,8 +32,9 @@ import matplotlib.pyplot as plt
 
 try:
     os.listdir('/usr')
+    web_dir = '/home/tjt/public_html'
     scripts_dir = '/data/scripts'
-    image_dir = os.path.join('/var/www/html','images','snowtool')
+    image_dir = os.path.join(web_dir,'images','snowtool')
 except:
     scripts_dir = 'C:/data/scripts'
     sys.path.append(os.path.join(scripts_dir,'resources'))
@@ -46,7 +47,7 @@ class SnowTool:
         self.station = station
         self.model_list = model_list
         self.number_of_models = len(self.model_list)
-        self.number_of_model_runs = 3
+        self.number_of_model_runs = 4
         self.model_list_str = ''
         for m in self.model_list:
             this_model = m + ' '
@@ -83,12 +84,14 @@ class SnowTool:
                       'namnest':{'name':'nam','cmap':plt.cm.Oranges_r, 'colorspace': 1, 'width': 1},
                       'hrrr':{'name':'hrrr','cmap':plt.cm.Greens_r, 'colorspace': 1, 'width': 1},    
                       'rap':{'name':'rap','cmap':plt.cm.Purples_r, 'colorspace': 1, 'width': 1}}
-        self.ramp_start = 0.55
+        self.ramp_start = 0.5
         self.element_info = {'temp':{'name':'Temperature (F)','cmap':plt.cm.Reds_r, 'colorspace': self.ramp_start, 'width': 1},
                       'wind':{'name':'Wind Speed (kt)','cmap':plt.cm.Greys_r, 'colorspace': self.ramp_start, 'width': 1},
                       'snow':{'name':'Snow (in)','cmap':plt.cm.Blues_r, 'colorspace': self.ramp_start, 'width': 1},
                       'obsn':{'name':'Snow (in)','cmap':plt.cm.Blues_r, 'colorspace': self.ramp_start, 'width': 1},
                       'fzra':{'name':'Freezing Rain (in)','cmap':plt.cm.Purples_r, 'colorspace': self.ramp_start, 'width': 1},
+                      'aczr':{'name':'Freezing Rain (in)','cmap':plt.cm.Purples_r, 'colorspace': self.ramp_start, 'width': 1},
+                      'totzr':{'name':'Freezing Rain (in)','cmap':plt.cm.Purples_r, 'colorspace': self.ramp_start, 'width': 1},
                       'sleet':{'name':'Sleet (in)','cmap':plt.cm.Blues_r, 'colorspace': self.ramp_start, 'width': 1},
                       }
 
@@ -127,6 +130,7 @@ class SnowTool:
         goback = self.now - timedelta(hours=2)
         goback6 = self.now - timedelta(hours=round_down_6hrs)
         self.roundup6 = self.now + timedelta(hours=round_up_6hrs)
+        self.roundup_1day = self.roundup6 + timedelta(days=1)
         self.gfs_start = self.roundup6 + timedelta(days=0)
         self.gfs_end = self.roundup6 + timedelta(hours=84)
         self.short_start = self.now + timedelta(hours=round_up_3hrs)
@@ -148,7 +152,7 @@ class SnowTool:
         #elif self.model == 'nam' or self.model == 'namnest' or self.model == 'gfs3':
         elif self.model in ['nam', 'namnest', 'rap', 'hrrr', 'gfs3']:
             # 6 hourly run time interval for these models
-            for i in range (0,3):
+            for i in range (0,self.number_of_model_runs):
                 new = goback6 - timedelta(hours=i*6)
                 hr = datetime.strftime(new, '%H')
                 tf = datetime.strftime(new, '%Y%m%d_%H')
@@ -332,7 +336,7 @@ class SnowTool:
 
         """
 
-        for f in reversed(os.listdir(self.staged_dir)):
+        for f in reversed(sorted(os.listdir(self.staged_dir))):
         #for f in reversed(os.listdir(self.staged_dir)):
             column_name_substr = self.staged_file_dict[f]['colname']
             fname = os.path.join(self.staged_dir,f)
@@ -364,7 +368,7 @@ class SnowTool:
             if self.df_master is None:
                 self.df_master = self.df
 
-            for c,p in zip(['Snow','ObsSN','FZRA','Sleet','SfcT','Wind'], ['snow_', 'obsn_', 'fzra_', 'sleet_', 'temp_', 'wind_']):
+            for c,p in zip(['Snow','ObsSN','FZRA','TotZR','Sleet','SfcT','Wind'], ['snow_', 'obsn_', 'fzra_', 'totzr_', 'sleet_', 'temp_', 'wind_']):
             
                 x = self.df[c].astype(float)
                 this_column_name = p + column_name_substr
@@ -403,14 +407,14 @@ class SnowTool:
         #rcParams['axes.prop_cycle'] = cycler(color=cmap(np.linspace(0.4, 0.9, (1/self.number_of_model_runs))))
 
         self.a.plot(self.df_master[self.this_column], color=cmap(self.parameters_dict[this_parameter]), zorder=self.zorder, linewidth=self.linewidth)
-        print(self.this_column,self.parameters_dict[this_parameter])
+        #print(self.this_column,self.parameters_dict[this_parameter])
         self.custom_line = Line2D(self.df_master[self.this_column], [0], color=cmap(1), lw=self.linewidth)
         self.custom_line_list.append(self.custom_line)
-        self.parameters_dict[this_parameter] = self.parameters_dict[this_parameter] + 0.10
+        self.parameters_dict[this_parameter] = self.parameters_dict[this_parameter] + (0.3/self.number_of_model_runs)
         self.zorder = self.zorder - 1
-        if len(self.legends) == 3:
+        if len(self.legends) == self.number_of_model_runs:
             self.a.legend(self.legends,loc='upper right', bbox_to_anchor=(1, 1.25),
-          ncol=3, fancybox=True, shadow=True)
+          ncol=self.number_of_model_runs, fancybox=True, shadow=True)
             #self.a.legend(self.legends,shadow=True, fancybox=True)
             self.legends = []
             self.linewidth = 6
@@ -423,9 +427,9 @@ class SnowTool:
     def final_plot(self):
         self.linewidth = 6
         self.zorder = 100
-        self.parameters = ['obsn', 'fzra', 'temp', 'wind']
+        self.parameters = ['obsn', 'totzr', 'temp', 'wind']
         self.parameters_dict = {key:0.4 for key in self.parameters}
-        fig, axes = plt.subplots(len(self.parameters),figsize=(11,8),sharex=True,subplot_kw={'xlim': (pd.Timestamp(self.short_start),pd.Timestamp(self.short_end))})
+        fig, axes = plt.subplots(len(self.parameters),figsize=(11,8),sharex=True,subplot_kw={'xlim': (pd.Timestamp(self.roundup_1day),pd.Timestamp(self.gfs_end))})
         #props = dict(boxstyle='round', facecolor='white', alpha=0.7)
 
         
@@ -462,6 +466,7 @@ class SnowTool:
         img_fname = '{}.png'.format(self.station)
         image_dst_path = os.path.join(image_dir,img_fname)
         fig.tight_layout()
+        plt.subplots_adjust(top=0.9)
         plt.savefig(image_dst_path,format='png')
         plt.close()
 
@@ -478,6 +483,17 @@ class SnowTool:
 #lwa = SnowTool('lwa',['gfs','nam','namnest','rap','hrrr'])
 #mkg = SnowTool('kmkg',['gfs','nam','namnest','rap','hrrr'])
 #grr = SnowTool('kgrr',['hrrr'])
-grr = SnowTool('kgrr',['hrrr'],['obsn','fzra','wind','temp'])
-#rqb = SnowTool('krqb',['gfs3'],['obsn','fzra','wind','temp'])
+elements = ['obsn','totzr','wind','temp']
+models = ['gfs3']
+grr = SnowTool('kgrr', models, elements)
+mkg = SnowTool('kmkg', models, elements)
+lan = SnowTool('klan', models, elements)
+biv = SnowTool('biv', models, elements)
+rqb = SnowTool('krqb', models, elements)
+ldm = SnowTool('kldm', models, elements)
+mop = SnowTool('kmop', models, elements)
+azo = SnowTool('kazo', models, elements)
+btl = SnowTool('kbtl', models, elements)
+jxn = SnowTool('kjxn', models, elements)
+rqb = SnowTool('krqb', models, elements)
 #mbl = SnowTool('kmbl','nam')
