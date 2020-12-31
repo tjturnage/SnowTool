@@ -1,13 +1,13 @@
 # SnowTool
 ## Description:
 
-Plots time series of Cobb Snow Tool text output. These files are routinely created at the Penn State Bufkit site <http://www.meteo.psu.edu/bufkit/>
+Plots time series of Cobb Snow Tool text output. These files are routinely created at the [Penn State Bufkit site](http://www.meteo.psu.edu/bufkit/)
 
 
-Cobb Bufkit Data Distribution System webpage <http://www.meteo.psu.edu/bufkit/CONUS_HRRR_00_cobb.html>
+[Cobb Bufkit Data Distribution System webpage](http://www.meteo.psu.edu/bufkit/CONUS_HRRR_00_cobb.html)
 
 
-Downloads files from Penn State example  <http://www.meteo.psu.edu/bufkit/data/HRRR/00/hrrr_kgrr.cobb>
+Example of file that's downloaded: <http://www.meteo.psu.edu/bufkit/data/HRRR/00/hrrr_kgrr.cobb>
 
 
 ### Requires the following local directories be created and accessible for handling text files 
