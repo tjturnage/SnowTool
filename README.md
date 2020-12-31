@@ -14,7 +14,7 @@ Example of file that's downloaded: <http://www.meteo.psu.edu/bufkit/data/HRRR/00
 
 |    directory    |  description                                                                                                                           |
 | ---------------:|:-------------------------------------------------------------------------------------------------------------------------------------- | 
-|         raw/    |    downloaded files dir                                                                                                                |
-|   processed/    |    destination for files parsed from `raw/` and file format is `YYYYMMDD_HH_{model}_{station).txt` based on model run time             |
-|      stage/     |    based on desired stations, models, and number of model runs to plot the associated files get staged here                            |
+|       `raw/`    |    downloaded files dir                                                                                                                |
+|   `processed/`  |    destination for files parsed from `raw/` and file format is `YYYYMMDD_HH_{model}_{station).txt` based on model run time             |
+|      `stage/`   |    based on desired stations, models, and number of model runs to plot the associated files get staged here                            |
 
